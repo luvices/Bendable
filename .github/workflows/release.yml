@@ -18,6 +18,11 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 45
 
+    # Lifted to the job so the steps below can ask whether signing is configured.
+    # `secrets` is not one of the contexts an `if` can read; `env` is.
+    env:
+      MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -41,9 +46,8 @@ jobs:
       # unidentified-developer prompt on first launch.
       - name: Import signing certificate
         id: signing
-        if: ${{ secrets.MACOS_CERTIFICATE != '' }}
+        if: env.MACOS_CERTIFICATE != ''
         env:
-          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
           MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
         run: |
           KEYCHAIN="$RUNNER_TEMP/build.keychain"
