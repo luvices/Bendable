@@ -37,8 +37,8 @@ or run:
 xattr -dr com.apple.quarantine /Applications/Bendable.app
 ```
 
-Builds published from a tag are signed and notarized when the maintainer's signing
-secrets are configured.
+Published releases are signed and notarized when the maintainer's signing secrets are
+configured.
 
 ## How the lid is tracked
 
@@ -186,17 +186,22 @@ catalogue. The artwork is code, not a binary.
 
 ## Releasing
 
-Push a tag:
+Bump `MARKETING_VERSION` in the Xcode project and push to `main`. That is the whole
+procedure.
 
-```bash
-git tag v1.0.0
-git push origin v1.0.0
-```
+The release workflow reads the version out of the project, and if no tag matches it
+yet, tests, builds, packages a DMG with a SHA-256 checksum, tags the commit and
+publishes a GitHub release with both attached. Pushing a `v*` tag by hand still works
+and does the same thing.
 
-The release workflow builds, tests, packages a DMG, generates a SHA-256 checksum and
-attaches both to a GitHub release. Signing and notarization happen only if these
-optional repository secrets are set. Without them the workflow still produces a
-working ad-hoc signed DMG.
+The version lives in one place, so there is no way to ship a release whose number
+disagrees with what the app reports about itself. `scripts/version.sh` prints it.
+
+Pushes to `main` that do not change the version cost one short Linux job that reads
+the version and stops. Nothing is built and nothing is published.
+
+Signing and notarization happen only if these optional repository secrets are set.
+Without them the workflow still produces a working ad-hoc signed DMG.
 
 | Secret | Purpose |
 | --- | --- |

@@ -134,6 +134,9 @@ scripts/test.sh
 scripts/build.sh
 ```
 
+Leave `MARKETING_VERSION` alone unless you mean to cut a release: pushing a change to
+it publishes one.
+
 Both must pass with no new warnings. CI runs the same thing on every push and
 uploads a DMG artifact, so reviewers can try your build.
 

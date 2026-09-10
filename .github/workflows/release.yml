@@ -1,20 +1,52 @@
 name: Release
 
+# Releases follow the version in the Xcode project rather than a tag pushed by hand.
+# Bump MARKETING_VERSION, push, and this publishes. Every other push to main costs
+# one cheap Linux job that looks at the version and stops.
 on:
   push:
+    branches: [main]
     tags: ['v*']
   workflow_dispatch:
-    inputs:
-      tag:
-        description: Tag to release
-        required: true
 
 permissions:
   contents: write
 
 jobs:
+  decide:
+    name: Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      publish: ${{ steps.check.outputs.publish }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Tags are how this knows what has already gone out.
+          fetch-depth: 0
+
+      - id: check
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="$(scripts/version.sh)"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+          if [ "$GITHUB_REF_TYPE" != tag ] && git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
+            echo "v$VERSION is already released. Bump MARKETING_VERSION to publish again."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Publishing v$VERSION"
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
   release:
     name: Build, package and publish
+    needs: decide
+    if: needs.decide.outputs.publish == 'true'
     runs-on: macos-15
     timeout-minutes: 45
 
@@ -22,6 +54,7 @@ jobs:
     # `secrets` is not one of the contexts an `if` can read; `env` is.
     env:
       MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+      VERSION: ${{ needs.decide.outputs.version }}
 
     steps:
       - uses: actions/checkout@v4
@@ -77,10 +110,13 @@ jobs:
         if: ${{ steps.signing.outputs.signed != 'true' }}
         run: scripts/package-dmg.sh
 
+      # The action creates the tag at this commit when it does not exist yet, which
+      # is what makes a version bump enough on its own.
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          tag_name: v${{ env.VERSION }}
+          name: Bendable ${{ env.VERSION }}
           draft: false
           generate_release_notes: true
           files: |
