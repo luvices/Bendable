@@ -1,0 +1,9 @@
+build/
+DerivedData/
+*.xcuserdatad
+xcuserdata/
+*.xcworkspace/xcuserdata/
+
+.DS_Store
+# exFAT and other non-native volumes drop an AppleDouble sidecar beside every file.
+._*
