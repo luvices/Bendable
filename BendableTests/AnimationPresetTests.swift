@@ -21,7 +21,7 @@ final class AnimationPresetTests: XCTestCase {
             switch frame.mask {
             case .none:
                 break
-            case let .aperture(_, openness), let .shutter(openness):
+            case let .aperture(_, openness), let .shutter(openness), let .blinds(_, openness):
                 XCTAssertEqual(openness, 1, accuracy: 0.001, "\(preset.id) masks a fully open lid")
             }
         }
@@ -83,13 +83,13 @@ final class AnimationPresetTests: XCTestCase {
             FoldPreset().frame(progress: progress, velocity: 0, direction: .closing, context: context)
         }
 
-        // A fifth of the way down: tipping, still sharp, still lit.
+        // A fifth of the way down: already correcting, still sharp, still lit.
         let early = frame(0.8)
         XCTAssertGreaterThan(early.foldAngle * 180 / .pi, 10)
         XCTAssertLessThan(early.blur, 0.1)
         XCTAssertEqual(early.brightness, 1, accuracy: 0.001)
 
-        // Halfway: well tipped and visibly soft, but not yet going dark.
+        // Halfway: well into the correction and visibly soft, but not yet going dark.
         let midway = frame(0.5)
         XCTAssertGreaterThan(midway.foldAngle * 180 / .pi, 35)
         XCTAssertGreaterThan(midway.blur, 0.15)
@@ -121,7 +121,14 @@ final class AnimationPresetTests: XCTestCase {
         }
     }
 
-    func testFoldTiltIsProportionalToTravelAndCappedShortOfEdgeOn() {
+    /// The property the whole illusion rests on: the picture turns against the lid, by
+    /// the number of degrees the lid has turned.
+    ///
+    /// The rendered top recedes while the real top is swinging toward the viewer, so
+    /// the angle is positive. Negative doubles the fold and the screen appears to fall
+    /// inward as it shuts. Larger than the sweep over-corrects and it appears to tip
+    /// backwards on its own. Both have shipped here; hence the numbers below.
+    func testFoldCounterRotatesDegreeForDegreeAgainstTheHinge() {
         let tilts = stride(from: 1.0, through: 0.0, by: -0.05).map {
             FoldPreset().frame(progress: $0, velocity: 0, direction: .closing, context: context)
                 .foldAngle * 180 / .pi
@@ -133,19 +140,20 @@ final class AnimationPresetTests: XCTestCase {
                 .foldAngle * 180 / .pi
         }
 
+        // Deeper into the close is further from zero, never back toward it.
         XCTAssertEqual(tilts, tilts.sorted())
         XCTAssertEqual(tilt(at: 1), 0, accuracy: 0.0001)
 
-        // Degree for degree with the hinge while the panel is still comfortably a
-        // screen: 30° of lid travel turns the render 30°.
+        // 30° of lid travel turns the picture 30° the other way, which is what leaves
+        // it apparently still. Not 51, and emphatically not -30.
         XCTAssertEqual(tilt(at: 0.7), 30, accuracy: 0.5)
         XCTAssertEqual(tilt(at: 0.5), 50, accuracy: 0.5)
 
         // Past that it eases into a ceiling rather than clipping, which would leave the
-        // panel visibly frozen for the last of the close.
+        // correction visibly frozen for the last of the close.
         XCTAssertGreaterThan(tilt(at: 0.1), tilt(at: 0.2))
         XCTAssertGreaterThan(tilt(at: 0), tilt(at: 0.1))
-        XCTAssertLessThan(tilt(at: 0), 85, "Edge-on stops reading as a screen")
+        XCTAssertLessThan(tilt(at: 0), 90, "Beyond edge-on there is nothing to hold")
     }
 
     func testFoldRoundsItsCornersOnlyOnceThePanelHasMoved() {
@@ -202,7 +210,7 @@ final class AnimationPresetTests: XCTestCase {
         asymmetric.openingIntensity = 0.2
         let closing = FoldPreset().frame(progress: 0.5, velocity: 0, direction: .closing, context: asymmetric)
         let opening = FoldPreset().frame(progress: 0.5, velocity: 0, direction: .opening, context: asymmetric)
-        XCTAssertGreaterThan(closing.foldAngle, opening.foldAngle)
+        XCTAssertGreaterThan(abs(closing.foldAngle), abs(opening.foldAngle))
     }
 
     func testReduceMotionRemovesSpatialEffects() {
@@ -238,10 +246,10 @@ final class AnimationPresetTests: XCTestCase {
     }
 
     func testMaskPresetsCloseFullyByTheEndOfTravel() {
-        for preset in [AperturePreset(), ShutterPreset()] as [any AnimationPreset] {
+        for preset in [AperturePreset(), ShutterPreset(), BlindsPreset()] as [any AnimationPreset] {
             let frame = preset.frame(progress: 0, velocity: 0, direction: .closing, context: context)
             switch frame.mask {
-            case let .aperture(_, openness), let .shutter(openness):
+            case let .aperture(_, openness), let .shutter(openness), let .blinds(_, openness):
                 XCTAssertEqual(openness, 0, accuracy: 0.001, "\(preset.id) never fully closes")
             case .none:
                 XCTFail("\(preset.id) produced no mask at full closure")

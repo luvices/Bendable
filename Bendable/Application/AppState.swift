@@ -16,6 +16,10 @@ final class AppState {
     /// engine is quietly rendering something else. The interface has to say so.
     var isSubstitutingPreset = false
     var launchAtLoginEnabled = false
+    /// Whether the Mac will stay running with the lid shut, and who asked for it.
+    var sleepGuard: SleepGuardStatus = .off
+    /// Set when changing that failed, so the popover can say why.
+    var sleepGuardProblem: String?
     /// Set when registering a login item failed, so the popover can say why.
     var launchAtLoginProblem: String?
     var calibration: HingeCalibration = .default

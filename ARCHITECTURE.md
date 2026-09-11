@@ -309,8 +309,36 @@ shareable-content list is cached and pre-warmed.
 Bendable controls nothing essential and is built to fail open. No power assertions, no
 sleep delays, no hooks in the display path. If Metal is unavailable the overlay is never
 created; if the sensor disappears the app falls back or goes idle; if capture fails the
-preset degrades to one that does not need it. Nothing it can do prevents the Mac from
-sleeping, waking, locking or shutting down.
+preset degrades to one that does not need it. Nothing the animation does prevents the
+Mac from sleeping, waking, locking or shutting down.
+
+## Staying awake with the lid shut
+
+The one feature that breaks the rule above, and it is kept at arm's length because of
+it.
+
+No public API can do this. `IOPMLib.h` says of the strongest sleep assertion it offers
+that "the system may still sleep for lid close", and the type that sounds right,
+`kIOPMAssertionTypePreventSystemSleep`, is documented as unsupported in any release.
+The only switch that works is `pmset disablesleep`, a system setting, and it needs
+root.
+
+`SleepGuard` therefore holds no privilege at all. Each change puts up the standard
+authorization dialog and runs one fixed command with a single digit this file produced
+itself; nothing from a preference, a user or a network reaches that shell. There is no
+helper tool and no daemon, so between one toggle and the next Bendable is an ordinary
+unprivileged app. The cost is a password prompt every time, which is the trade that
+was chosen deliberately.
+
+Three consequences shape the code around it. The setting is global, so another app or a
+terminal can change it underneath: `SleepGuardStatus.resolve` compares what Bendable
+asked for against what `IOPMrootDomain` actually reports, and the switch follows the
+machine rather than the preference. It outlives the process, so a run that is killed
+leaves it on, which is `onFromElsewhere` and is said out loud. And clearing it needs
+authorization exactly as much as setting it did, so it cannot be tidied away on quit:
+`applicationShouldTerminate` asks instead, and refuses to leave if the password dialog
+is cancelled. The status item's icon changes while it is on, because a machine that
+will not sleep in a bag should not require opening a popover to discover.
 
 ## Adding a preset
 

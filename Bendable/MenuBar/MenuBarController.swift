@@ -25,14 +25,31 @@ final class MenuBarController {
         popover.animates = false
 
         if let button = statusItem.button {
-            button.image = NSImage(
-                systemSymbolName: "laptopcomputer", accessibilityDescription: "Bendable"
-            )
-            button.image?.isTemplate = true
             button.target = self
             button.action = #selector(togglePopover)
             button.setAccessibilityLabel("Bendable")
         }
+        refreshIcon()
+    }
+
+    /// The icon carries one bit beyond "Bendable is running": whether the Mac has been
+    /// told not to sleep with the lid shut. That outlives the popover and the app, so
+    /// it should not take a click to discover.
+    func refreshIcon() {
+        guard let button = statusItem.button else { return }
+        let awake = coordinator.state.sleepGuard.isActive
+        let symbol = awake ? "laptopcomputer.trianglebadge.exclamationmark" : "laptopcomputer"
+        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Bendable")
+            ?? NSImage(systemSymbolName: "laptopcomputer", accessibilityDescription: "Bendable")
+        image?.isTemplate = true
+        button.image = image
+        // A status item with neither image nor title is zero width and invisible, and
+        // an invisible menu bar item is indistinguishable from an app that did not
+        // start. Symbol names can go missing across releases, so never rely on one.
+        button.title = image == nil ? "Bendable" : ""
+        button.toolTip = awake
+            ? "Bendable: your Mac will not sleep with the lid shut"
+            : "Bendable"
     }
 
     #if DEBUG

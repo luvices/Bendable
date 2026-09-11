@@ -60,6 +60,8 @@ struct HingeTab: View {
             .padding(.top, 2)
 
             Note(startAngleNote)
+
+            LidShutSection()
         }
     }
 

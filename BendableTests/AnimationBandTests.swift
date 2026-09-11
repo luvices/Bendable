@@ -121,21 +121,25 @@ final class FoldSweepTests: XCTestCase {
             .foldAngle * 180 / .pi
     }
 
-    /// A narrow band still has to produce a fold worth looking at.
-    func testANarrowBandStillTurnsThePanelProperly() {
-        XCTAssertGreaterThan(tilt(travel: 45, progress: 0), 60)
-        XCTAssertGreaterThan(tilt(travel: 30, progress: 0), 60)
+    /// A narrow band must not be amplified to make a bigger fold.
+    ///
+    /// This is the opposite of what the preset used to do, and the reason is the whole
+    /// point of Fold: the rotation cancels the lid's own. Turning the picture further
+    /// than the lid actually moved does not read as a stronger effect. It reads as the
+    /// screen tipping backwards by itself.
+    func testANarrowBandIsNotAmplified() {
+        XCTAssertEqual(tilt(travel: 45, progress: 0), 45, accuracy: 0.5)
+        XCTAssertEqual(tilt(travel: 30, progress: 0), 30, accuracy: 0.5)
     }
 
-    /// A band wide enough to need no help is left alone: degree for degree.
-    func testAWideBandTurnsDegreeForDegree() {
+    /// Degree for degree against the hinge, whatever the band is.
+    func testEveryBandTurnsDegreeForDegree() {
         XCTAssertEqual(tilt(travel: 100, progress: 0.7), 30, accuracy: 0.5)
         XCTAssertEqual(tilt(travel: 90, progress: 0.5), 45, accuracy: 0.5)
     }
 
-    /// Whatever the band, the mapping must be a straight line in the angle. That is
-    /// what makes the picture feel attached, rather than the constant of
-    /// proportionality being exactly one.
+    /// Whatever the band, the mapping must be a straight line in the angle. Any curve
+    /// of its own would make the correction lead or lag the lid it is cancelling.
     func testTheMappingIsLinearInTheAngleForEveryBand() {
         for travel in [25.0, 45.0, 75.0, 110.0] {
             let quarter = tilt(travel: travel, progress: 0.75)

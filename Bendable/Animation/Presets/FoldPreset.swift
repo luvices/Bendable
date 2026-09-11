@@ -1,13 +1,29 @@
 import Foundation
 import simd
 
-/// The flagship preset: the desktop tips back about the bottom of the display, exactly
-/// as the panel does, and softens as it goes.
+/// The flagship preset: the picture goes on standing at the angle the lid was resting
+/// at, while the lid itself folds down out from under it.
 ///
-/// The transform is a plain keystone. The image stays a rigid rectangle, hinged along
-/// its bottom edge and seen in perspective, so the top recedes and narrows while the
-/// bottom stays put. Nothing is warped or creased, which is what keeps it reading as a
-/// flat screen turning away rather than as an effect being applied to a picture.
+/// Closing a laptop swings the top edge of the panel toward you and down, so an
+/// untouched screen foreshortens: it squashes, and the near top edge splays wider. The
+/// preset draws the desktop rotated the opposite way, top receding, by exactly the
+/// angle the lid has turned. On the panel that looks like a picture tipping away. Seen
+/// from where you are sitting the two rotations cancel, and what reaches your eye is a
+/// screen that has not moved at all.
+///
+/// Two things have to hold or the illusion goes, and each one has been wrong here at
+/// least once.
+///
+/// The direction. The rotation is *against* the lid, which means the rendered top
+/// recedes while the physical top approaches. Turn the picture the same way the lid is
+/// already going and the eye sees the fold twice: the screen appears to fall inward as
+/// it shuts.
+///
+/// The size. One degree of correction per degree the hinge has swept, no more. This
+/// used to map a narrow band onto a fuller sweep so a small movement produced a big
+/// fold, which is the right instinct for a preset that decorates the movement and
+/// exactly wrong for one that cancels it. Over-correcting does not read as a stronger
+/// effect, it reads as the screen tipping backwards of its own accord.
 ///
 /// The rest is grading, all of it strongest at the receding edge: focus goes first,
 /// then colour washes out the way an LCD does at a grazing angle, then the light goes.
@@ -20,7 +36,7 @@ import simd
 struct FoldPreset: AnimationPreset {
     static let id = "fold"
     let name = "Fold"
-    let summary = "The desktop tips back with the panel, softening as it goes."
+    let summary = "The desktop stays standing where it was while the lid folds away under it."
     let requiresScreenCapture = true
     let supportedControls: PresetControl = [
         .perspective, .tilt, .blur, .variableBlur, .washout, .corners, .dimming,
@@ -35,23 +51,15 @@ struct FoldPreset: AnimationPreset {
     private let velocityLead = 0.016
     private let maxLeadProgress = 0.05
 
-    /// The panel always turns at least this far over the animation band.
+    /// Where the correction stops tracking one for one.
     ///
-    /// The band is deliberately narrow, since the effect lives in the last stretch
-    /// before the lid shuts, and turning the render by exactly the degrees the hinge
-    /// swept would then leave it barely tipped at all. So a narrow band is mapped onto a
-    /// fuller rotation. What matters for the effect feeling attached is that the
-    /// mapping stays *linear* in the angle, with no easing curve of its own between
-    /// the lid and the picture; the constant of proportionality can be greater than
-    /// one. A band this wide or wider turns the panel degree for degree.
-    private let minimumSweep = 75.0
-
-    /// Hinge degrees the panel matches exactly, once the sweep is settled.
-    private let linearTiltLimit = 55.0
-    /// Where the tilt eases out. Past here the keystone collapses faster than the eye
-    /// reads as a screen, so the remaining travel is compressed into the last few
-    /// degrees rather than clipped, which would freeze the panel mid-close.
-    private let maximumTilt = 80.0
+    /// Up to here it is exact. Past it the panel is far enough off the plane that
+    /// holding the picture upright would squeeze it into a sliver at the top of the
+    /// frame, so the rest of the travel is compressed. Easing rather than clipping,
+    /// because a hard stop leaves the picture frozen through the last of the close,
+    /// which is when the lid is moving fastest.
+    private let linearTiltLimit = 60.0
+    private let maximumTilt = 85.0
 
     func frame(
         progress: Double,
@@ -75,12 +83,17 @@ struct FoldPreset: AnimationPreset {
         // Hinged along the bottom edge, like the panel.
         frame.foldPosition = 0
 
-        // Linear in the hinge angle, then eased into a ceiling.
-        let sweep = max(context.hingeTravelDegrees, minimumSweep)
-        let swept = closure * sweep * lerp(0.55, 1.0, intensity) * tuning.tilt
+        // The degrees the lid has actually swept since the effect took hold, which is
+        // exactly what has to be undone. Anything else here breaks the cancellation.
+        let swept = closure * context.hingeTravelDegrees * lerp(0.55, 1.0, intensity) * tuning.tilt
+        // Positive, so the rendered top recedes while the real one is swinging toward
+        // the viewer. Equal and opposite is what leaves the picture apparently still.
         frame.foldAngle = Self.softLimited(
             swept, linearUpTo: linearTiltLimit, ceiling: maximumTilt
         ) * .pi / 180
+        // The camera has to sit where a person actually sits, or the counter rotation
+        // is the inverse of a projection nobody is looking through and the picture
+        // drifts instead of holding still.
         frame.perspective = lerp(0.55, 1.0, intensity) * tuning.perspective
 
         // Focus goes early and fast at the receding edge; by two-thirds closed that end

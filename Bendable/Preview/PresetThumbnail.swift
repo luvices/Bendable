@@ -13,8 +13,9 @@ import SwiftUI
 final class PresetThumbnailRenderer {
     static let shared = PresetThumbnailRenderer()
 
-    /// Early enough in the travel that every preset is visibly doing something while
-    /// the desktop is still legible. Sampled deeper, most of them are simply dark.
+    /// Fallback for a preset that does not name its own sample point: early enough to
+    /// leave the desktop legible, deep enough that the turning presets are visibly
+    /// turning.
     static let previewProgress = 0.68
     private static let size = (width: 300, height: 190)
 
@@ -38,8 +39,9 @@ final class PresetThumbnailRenderer {
     }
 
     func image(
-        for preset: any AnimationPreset, tuning: PresetTuning, progress: Double = previewProgress
+        for preset: any AnimationPreset, tuning: PresetTuning, progress: Double? = nil
     ) -> CGImage? {
+        let progress = progress ?? preset.thumbnailProgress
         let key = Key(presetID: preset.id, tuning: tuning, progress: progress)
         if let cached = cache[key] { return cached }
 

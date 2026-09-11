@@ -37,6 +37,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         coordinator.start()
         menuBar = MenuBarController(coordinator: coordinator)
+        coordinator.sleepGuardDidChange = { [weak self] in self?.menuBar?.refreshIcon() }
 
         if !coordinator.preferences.hasCompletedFirstRun {
             showWelcome()
@@ -71,6 +72,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         #endif
+    }
+
+    /// Quitting while the Mac is set never to sleep on lid close needs a word first.
+    ///
+    /// Restoring the setting takes authorization, so it cannot be undone quietly on the
+    /// way out, and leaving silently would send the user off with a machine that stays
+    /// running in a bag and nothing on screen to say why.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard coordinator.shouldOfferToRestoreSleepOnQuit() else { return .terminateNow }
+
+        let alert = NSAlert()
+        alert.messageText = "Your Mac is still set to stay awake with the lid shut"
+        alert.informativeText = """
+        Bendable turned normal lid-close sleep off. Quitting does not turn it back on,         and changing it needs your password, so it has to be done now or from Terminal         later.
+        """
+        alert.addButton(withTitle: "Restore and Quit")
+        alert.addButton(withTitle: "Quit Anyway")
+        alert.addButton(withTitle: "Cancel")
+        alert.alertStyle = .warning
+
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            coordinator.setKeepAwakeWithLidShut(false)
+            // Only leave once it is actually back, so cancelling the password dialog
+            // does not quietly quit with the setting still on.
+            return coordinator.shouldOfferToRestoreSleepOnQuit() ? .terminateCancel : .terminateNow
+        case .alertSecondButtonReturn:
+            return .terminateNow
+        default:
+            return .terminateCancel
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {

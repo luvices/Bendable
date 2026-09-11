@@ -29,16 +29,29 @@ Mac that publishes a lid angle sensor; see the table below.
 Download `Bendable.dmg` from the [releases page](../../releases), open it, and drag
 Bendable to Applications.
 
-Builds from CI are ad-hoc signed rather than notarized, so Gatekeeper shows an
-"unidentified developer" warning the first time. Right-click the app and choose Open,
-or run:
+Builds are ad-hoc signed rather than notarized, so the first launch is blocked and
+macOS says it "cannot be opened because Apple cannot check it for malicious software".
+Two ways past it.
+
+**In the interface.** Try to open Bendable and dismiss the warning. Then go to System
+Settings, Privacy & Security, scroll to Security, and click **Open Anyway** next to the
+message about Bendable. Confirm, and it opens from then on.
+
+Control-clicking the app and choosing Open does not work for this. That route was how
+it used to be done, and macOS 15 removed it; Open Anyway is the replacement.
+
+**In a terminal**, which works on every version:
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/Bendable.app
 ```
 
-Published releases are signed and notarized when the maintainer's signing secrets are
-configured.
+Bendable has no Dock icon and opens no window: it is the small laptop in the menu bar.
+If nothing appears to happen when you launch it, look up there before assuming it
+failed.
+
+Releases are signed and notarized, and open without any of this, when the maintainer's
+signing secrets are configured.
 
 ## How the lid is tracked
 
@@ -67,7 +80,9 @@ Status tab shows the raw reading and the detected capability, and an issue
 saying what it reports would be welcome.
 
 Nothing about this is privileged: no kernel extension, no privileged helper, no
-daemon, no entitlement, and SIP stays on. [docs/HARDWARE.md](docs/HARDWARE.md) has the
+daemon, no entitlement, and SIP stays on. The one exception is the lid-shut
+wakefulness switch below, which asks for your password each time it is used and
+installs nothing. [docs/HARDWARE.md](docs/HARDWARE.md) has the
 details, including why the sensor is polled rather than subscribed to.
 
 ### Without a sensor
@@ -117,15 +132,44 @@ The controls are on the right, in three tabs:
 * **Status** is the sensor, your learned calibration and the permissions, with a
   button that copies the lot for a bug report.
 
+## Staying awake with the lid shut
+
+Under **Hinge** there is a switch that turns off lid-close sleep, so a build, a
+download or a render carries on with the lid down.
+
+macOS asks for your password when you use it, in both directions. That is not Bendable
+being careful for the sake of it: no public API can keep a Mac awake through a lid
+close, so the only way to do it is `pmset disablesleep`, which is a system setting.
+Bendable installs no helper and no daemon to avoid asking, so it has to ask.
+
+Three things worth knowing, all of which the app says too:
+
+* It keeps running and keeps making heat. Fine on a desk, not in a closed bag.
+* It outlives Bendable. Quitting does not restore normal sleep, because restoring it
+  needs your password as well. Bendable offers to do that when you quit.
+* It is a system-wide setting, so another app or a Terminal command can change it.
+  Bendable reads the real state rather than assuming, and says so when something else
+  turned it on.
+
+To undo it without Bendable:
+
+```bash
+sudo pmset -a disablesleep 0
+```
+
 ## Styles
 
 | Style | Needs Screen Recording | What it does |
 | --- | --- | --- |
-| **Fold** | Yes | The desktop tips back about the bottom of the display, degree for degree with the hinge, while focus, colour and light drain away from the receding edge into the black behind it |
+| **Fold** | Yes | The desktop turns against the lid, degree for degree, so it appears to stand still while the machine folds away under it |
 | **Crease** | Yes | A book fold: the desktop creases across its middle and only the upper half rotates away, with a bowed crease and a highlight catching the bend |
+| **Curl** | Yes | The top edge rolls over and away on a soft bend, the way a sheet of paper lifts off a desk |
+| **Recede** | Yes | The desktop drops straight back into the dark, square to you the whole way, with no rotation at all |
+| **Slide** | Yes | The desktop slides down out of sight behind the hinge, accelerating as it goes |
 | **Fade** | No | A plain dim to black |
 | **Aperture** | No | Iris blades close over the screen |
 | **Shutter** | No | Bars close in from the top and bottom |
+| **Blinds** | No | Six slats close down the screen, each shutting from its own edges inward |
 
 Presets are pure functions from hinge state to a frame description. Adding one is
 about forty lines and does not touch the sensor pipeline; see

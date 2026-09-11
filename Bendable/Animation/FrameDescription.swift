@@ -8,6 +8,8 @@ enum MaskDescription: Sendable, Equatable {
     case aperture(blades: Int, openness: Double)
     /// Two bars closing toward the horizontal centre line.
     case shutter(openness: Double)
+    /// Slats closing across the whole height, each one shutting from its own edges in.
+    case blinds(slats: Int, openness: Double)
 }
 
 /// Everything the renderer needs for one frame.

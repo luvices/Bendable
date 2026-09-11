@@ -10,6 +10,18 @@ on this repository: **Security → Report a vulnerability**. If that is
 unavailable to you, open a public issue containing only the words "security
 report" and a way to reach you, and a maintainer will arrange a private channel.
 
+## What runs with elevated privileges
+
+One thing, on request, and never in the background.
+
+The lid-shut wakefulness switch runs `/usr/bin/pmset -a disablesleep 0|1` through the
+standard macOS authorization dialog. The command is a literal in
+`Bendable/Power/SleepGuard.swift` with a single digit interpolated that the same file
+produces; no preference, user input or remote value reaches a shell. Bendable installs
+no helper tool and no daemon, holds no authorization between one use and the next, and
+never sees or stores the password. With that switch untouched, Bendable runs entirely
+as an ordinary unprivileged user process.
+
 Please include:
 
 - the macOS version and Mac model;

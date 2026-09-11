@@ -56,6 +56,10 @@ struct StatusTab: View {
                     title: "Screen recording",
                     value: state.screenCaptureGranted ? "Allowed" : "Not allowed"
                 )
+                Readout(
+                    title: "Lid-shut sleep",
+                    value: state.sleepGuard.isActive ? "Turned off" : "Normal"
+                )
                 SwitchRow(
                     title: "Debug logging",
                     help: "Writes detail to the unified log. Never records what is on screen.",
@@ -90,6 +94,7 @@ struct StatusTab: View {
             String(format: "Band: %.1f", state.animationRange.upperBound),
             "Style: \(coordinator.preferences.presetID)",
             "Screen recording: \(state.screenCaptureGranted ? "allowed" : "not allowed")",
+            "Lid-shut sleep: \(state.sleepGuard)",
         ]
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(lines.joined(separator: "\n"), forType: .string)

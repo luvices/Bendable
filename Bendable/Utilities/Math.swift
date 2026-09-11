@@ -33,4 +33,11 @@ enum Easing {
         let x = clamp(t, 0, 1)
         return 1 - (1 - x) * (1 - x)
     }
+
+    /// Slow to start and still gaining at the end, for something falling away rather
+    /// than being placed.
+    static func easeInCubic(_ t: Double) -> Double {
+        let x = clamp(t, 0, 1)
+        return x * x * x
+    }
 }

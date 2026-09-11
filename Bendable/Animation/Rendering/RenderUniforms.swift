@@ -57,6 +57,12 @@ struct RenderUniforms {
         case let .shutter(openness):
             maskKind = 2
             maskOpenness = Float(clamp(openness, 0, 1))
+        case let .blinds(slats, openness):
+            maskKind = 3
+            // Shares the iris blade count. Both answer "how many pieces is the mask
+            // made of", and no frame carries two kinds of mask at once.
+            self.blades = UInt32(clamp(slats, 2, 24))
+            maskOpenness = Float(clamp(openness, 0, 1))
         }
     }
 

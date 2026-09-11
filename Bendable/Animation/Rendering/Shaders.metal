@@ -106,6 +106,17 @@ static float maskCoverage(constant Uniforms &u, float2 uv) {
         case 2: {
             return smoothstep(openness - 0.004, openness + 0.004, abs(p.y));
         }
+        case 3: {
+            // Slats. Each one shuts from its own two edges toward its centre line, so
+            // the picture is cut into shrinking bands rather than wiped from one side.
+            float slats = max(float(u.blades), 2.0);
+            float withinSlat = fract((p.y + 1.0) * 0.5 * slats);
+            float fromCentre = abs(withinSlat - 0.5) * 2.0;
+            // Widen the edge as the slats close: a fixed one aliases badly once a band
+            // is only a few pixels tall.
+            float softness = 0.004 + 0.02 * (1.0 - openness);
+            return smoothstep(openness - softness, openness + softness, fromCentre);
+        }
         default:
             return 0.0;
     }

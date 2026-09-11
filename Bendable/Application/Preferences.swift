@@ -20,6 +20,7 @@ final class Preferences {
         static let startAngle = "animationStartAngle"
         static let hasCompletedFirstRun = "hasCompletedFirstRun"
         static let debugLogging = "debugLogging"
+        static let keepsAwake = "keepsAwakeWithLidShut"
     }
 
     private let defaults: UserDefaults
@@ -37,6 +38,7 @@ final class Preferences {
             Key.animatesOpening: true,
             Key.hasCompletedFirstRun: false,
             Key.debugLogging: false,
+            Key.keepsAwake: false,
         ])
         _enabled = defaults.bool(forKey: Key.enabled)
         _presetID = defaults.string(forKey: Key.presetID) ?? AnimationPresetCatalog.defaultID
@@ -48,6 +50,7 @@ final class Preferences {
         _animatesOpening = defaults.bool(forKey: Key.animatesOpening)
         _hasCompletedFirstRun = defaults.bool(forKey: Key.hasCompletedFirstRun)
         _debugLogging = defaults.bool(forKey: Key.debugLogging)
+        _keepsAwakeWithLidShut = defaults.bool(forKey: Key.keepsAwake)
         _calibration = Self.loadCalibration(from: defaults) ?? .default
         _tuning = Self.loadTuning(from: defaults)
     }
@@ -91,6 +94,15 @@ final class Preferences {
 
     var debugLogging: Bool {
         didSet { defaults.set(debugLogging, forKey: Key.debugLogging) }
+    }
+
+    /// Whether Bendable asked for the Mac to stay up with the lid shut.
+    ///
+    /// This records the request, not the system state. The setting itself is global and
+    /// outlives the app, so the two are compared on every launch rather than one being
+    /// trusted to imply the other.
+    var keepsAwakeWithLidShut: Bool {
+        didSet { defaults.set(keepsAwakeWithLidShut, forKey: Key.keepsAwake) }
     }
 
     var calibration: HingeCalibration {

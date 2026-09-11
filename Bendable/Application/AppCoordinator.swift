@@ -50,6 +50,7 @@ final class AppCoordinator {
         state.launchAtLoginEnabled = LaunchAtLogin.isEnabled
         state.calibration = hinge.calibration
         refreshScreenCapturePermission()
+        refreshSleepGuard()
 
         observeSettings()
         accessibilityObserver = NotificationObserverToken(
@@ -231,6 +232,7 @@ final class AppCoordinator {
     func requestScreenCapturePermission() {
         ScreenCapture.requestPermission()
         refreshScreenCapturePermission()
+        refreshSleepGuard()
     }
 
     /// Re-reads the TCC state.
@@ -267,6 +269,63 @@ final class AppCoordinator {
             }
             Task { @MainActor in NSApp.terminate(nil) }
         }
+    }
+
+    /// Called when the Mac starts or stops staying awake with the lid shut, so the
+    /// status item can show it. A state this consequential should be visible without
+    /// opening anything.
+    var sleepGuardDidChange: (() -> Void)?
+
+    /// Re-reads the system setting and reconciles it with what Bendable asked for.
+    ///
+    /// Worth doing on every popover open, not just at launch: the setting is global,
+    /// and a terminal or another app can change it while Bendable is running.
+    func refreshSleepGuard() {
+        let previous = state.sleepGuard
+        defer {
+            if state.sleepGuard.isActive != previous.isActive { sleepGuardDidChange?() }
+        }
+        let actual = SleepGuard.isSleepDisabled
+        let status = SleepGuardStatus.resolve(
+            intent: preferences.keepsAwakeWithLidShut, actual: actual
+        )
+        if status == .revokedElsewhere {
+            // Something cleared it. Stop claiming otherwise rather than offering to
+            // turn off a thing that is already off.
+            preferences.keepsAwakeWithLidShut = false
+            state.sleepGuard = .off
+            Log.app.info("Lid-shut wakefulness was cleared outside Bendable")
+            return
+        }
+        state.sleepGuard = status
+    }
+
+    /// Asks for authorization and changes the setting.
+    ///
+    /// Cancelling is not an error worth reporting: the dialog is the user deciding, and
+    /// the switch simply goes back to where it was.
+    func setKeepAwakeWithLidShut(_ enabled: Bool) {
+        do {
+            try SleepGuard.setSleepDisabled(enabled)
+            preferences.keepsAwakeWithLidShut = enabled
+            state.sleepGuardProblem = nil
+            Log.app.info("Lid-shut wakefulness \(enabled ? "enabled" : "disabled", privacy: .public)")
+        } catch SleepGuard.Failure.cancelled {
+            state.sleepGuardProblem = nil
+        } catch {
+            Log.app.error("Lid-shut wakefulness change failed: \(String(describing: error), privacy: .public)")
+            state.sleepGuardProblem = error.localizedDescription
+        }
+        refreshSleepGuard()
+    }
+
+    /// Asked on quit, while the Mac is still set never to sleep on lid close.
+    ///
+    /// Restoring it needs authorization just as much as setting it did, so it cannot
+    /// be tidied up silently on the way out. Leaving without a word is worse: the Mac
+    /// would keep running in a bag with nothing on screen to explain it.
+    func shouldOfferToRestoreSleepOnQuit() -> Bool {
+        preferences.keepsAwakeWithLidShut && SleepGuard.isSleepDisabled
     }
 
     func setLaunchAtLogin(_ enabled: Bool) {
