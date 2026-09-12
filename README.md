@@ -195,6 +195,23 @@ written to disk, and are discarded before the Mac sleeps and whenever the screen
 
 ## Building
 
+### Windows workflow
+
+```bash
+git add .
+git commit -m "update"
+git push
+```
+
+Download the result from **GitHub → Actions → latest successful Build macOS DMG → Artifacts → Bendable-macOS-AppleSilicon**.
+
+For a release:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
 ```bash
 xcodebuild -project Bendable.xcodeproj -scheme Bendable -configuration Release build
 ```
@@ -230,19 +247,8 @@ catalogue. The artwork is code, not a binary.
 
 ## Releasing
 
-Bump `MARKETING_VERSION` in the Xcode project and push to `main`. That is the whole
-procedure.
-
-The release workflow reads the version out of the project, and if no tag matches it
-yet, tests, builds, packages a DMG with a SHA-256 checksum, tags the commit and
-publishes a GitHub release with both attached. Pushing a `v*` tag by hand still works
-and does the same thing.
-
-The version lives in one place, so there is no way to ship a release whose number
-disagrees with what the app reports about itself. `scripts/version.sh` prints it.
-
-Pushes to `main` that do not change the version cost one short Linux job that reads
-the version and stops. Nothing is built and nothing is published.
+Push a semantic version tag such as `v1.0.0`. The release workflow uses that version
+for the app and DMG, runs the tests, and publishes the DMG with its SHA-256 checksum.
 
 Signing and notarization happen only if these optional repository secrets are set.
 Without them the workflow still produces a working ad-hoc signed DMG.

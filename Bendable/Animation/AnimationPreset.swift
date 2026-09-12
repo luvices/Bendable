@@ -40,7 +40,8 @@ extension AnimationPreset {
 /// The shipping presets, in menu order.
 enum AnimationPresetCatalog {
     static let all: [any AnimationPreset] = [
-        FoldPreset(), CreasePreset(), CurlPreset(), RecedePreset(), SlidePreset(),
+        FoldPreset(), MacDuoPreset(), SunsetHDRPreset(),
+        CreasePreset(), CurlPreset(), RecedePreset(), SlidePreset(),
         FadePreset(), AperturePreset(), ShutterPreset(), BlindsPreset(),
     ]
 

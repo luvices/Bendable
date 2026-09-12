@@ -282,4 +282,33 @@ final class PresetRendererTests: XCTestCase {
         XCTAssertGreaterThan(try spread(blur: 0), 200)
         XCTAssertLessThan(try spread(blur: 1), 40)
     }
+
+    func testSunsetRendersWithoutATextureAndEndsAtOpaqueBlack() throws {
+        renderer.clearTexture()
+        let preset = SunsetHDRPreset()
+
+        let sunset = preset.frame(
+            progress: 0.45, velocity: 0, direction: .closing, context: AnimationContext()
+        )
+        let sunsetTarget = try makeTarget()
+        renderer.render(sunset, into: sunsetTarget)
+        let sunsetPixel = pixel(readPixels(sunsetTarget), sunsetTarget, x: 48, y: 32)
+        XCTAssertEqual(sunsetPixel.a, 255)
+        XCTAssertGreaterThan(sunsetPixel.r + sunsetPixel.g + sunsetPixel.b, 30)
+
+        let closed = preset.frame(
+            progress: 0, velocity: 0, direction: .closing, context: AnimationContext()
+        )
+        let closedTarget = try makeTarget()
+        renderer.render(closed, into: closedTarget)
+        let closedPixel = pixel(readPixels(closedTarget), closedTarget, x: 48, y: 32)
+        XCTAssertEqual(closedPixel.a, 255)
+        XCTAssertLessThan(closedPixel.r, 8)
+        XCTAssertLessThan(closedPixel.g, 8)
+        XCTAssertLessThan(closedPixel.b, 8)
+    }
+
+    func testRenderUniformStrideStaysInStepWithMetal() {
+        XCTAssertEqual(MemoryLayout<RenderUniforms>.stride, 128)
+    }
 }

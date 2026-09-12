@@ -24,6 +24,14 @@ struct Uniforms {
     uint blades;
     uint useTexture;
     float maxLOD;
+    uint effectKind;
+    float effectProgress;
+    float sunSize;
+    float glow;
+    float exposure;
+    float warmth;
+    float horizon;
+    float darkness;
 };
 
 struct VertexOut {
@@ -141,10 +149,92 @@ static float3 defocusSample(texture2d<float> source, sampler samp, float2 uv, fl
     return sum;
 }
 
+// Tiny stable blue-noise-like dither. The render target is 8-bit sRGB, so adding less
+// than one code value before encoding removes long bands without visible grain.
+static float interleavedGradientNoise(float2 pixel) {
+    return fract(52.9829189 * fract(dot(pixel, float2(0.06711056, 0.00583715))));
+}
+
+static float3 sunsetHDR(float2 uv, float2 pixel, constant Uniforms &u) {
+    float t = saturate(u.effectProgress);
+    float horizon = mix(0.47, 0.69, saturate(u.horizon));
+    float warmControl = mix(0.55, 1.35, saturate(u.warmth));
+
+    // Separate zenith and horizon palettes retain atmospheric depth. Broad,
+    // overlapping transitions avoid the flat two-stop gradient look.
+    float golden = smoothstep(0.16, 0.44, t);
+    float red = smoothstep(0.42, 0.69, t);
+    float twilight = smoothstep(0.64, 0.90, t);
+
+    float3 zenith = mix(float3(0.12, 0.46, 1.08), float3(0.22, 0.35, 0.78), golden);
+    zenith = mix(zenith, float3(0.35, 0.10, 0.20) * warmControl, red);
+    zenith = mix(zenith, float3(0.035, 0.045, 0.16), twilight);
+
+    float3 atHorizon = mix(float3(0.58, 0.82, 1.18), float3(1.42, 0.48, 0.075) * warmControl, golden);
+    atHorizon = mix(atHorizon, float3(1.05, 0.075, 0.025) * warmControl, red);
+    atHorizon = mix(atHorizon, float3(0.16, 0.07, 0.24), twilight);
+
+    float vertical = saturate(uv.y / max(horizon, 0.01));
+    float atmosphericDepth = pow(vertical, 0.72);
+    float3 color = mix(zenith, atHorizon, atmosphericDepth);
+
+    // A cooler upper-air veil and a warm low haze keep the field from reading as a
+    // mathematical gradient while remaining temporally stable at a parked lid angle.
+    color += float3(0.035, 0.07, 0.16) * (1.0 - vertical) * (1.0 - twilight);
+    float horizonDistance = abs(uv.y - horizon);
+    float haze = exp(-horizonDistance * horizonDistance * 420.0);
+    float3 hazeColor = mix(float3(0.45, 0.60, 0.80), float3(1.30, 0.28, 0.055), saturate(golden + red));
+    color += hazeColor * haze * mix(0.12, 0.38, saturate(u.glow)) * (1.0 - twilight * 0.72);
+
+    // The sun descends linearly in world space. The hard disk crosses the horizon at
+    // roughly 70% closed; atmospheric extinction removes it only after the crossing.
+    float aspect = max(u.aspect, 0.001);
+    float2 sunCenter = float2(0.52, mix(0.22, horizon + 0.22, t));
+    float2 fromSun = float2((uv.x - sunCenter.x) * aspect, uv.y - sunCenter.y);
+    float distanceToSun = length(fromSun);
+    float radius = mix(0.025, 0.078, saturate(u.sunSize));
+    float disk = 1.0 - smoothstep(radius * 0.82, radius, distanceToSun);
+    float bloomWidth = mix(0.055, 0.24, saturate(u.glow));
+    float bloom = exp(-distanceToSun * distanceToSun / max(bloomWidth * bloomWidth, 0.0001));
+    float belowHorizon = smoothstep(horizon - radius * 0.35, horizon + radius * 1.35, sunCenter.y);
+    float sunRiseIn = smoothstep(0.045, 0.15, t);
+    float sunVisibility = sunRiseIn * (1.0 - smoothstep(0.73, 0.86, t))
+        * (1.0 - belowHorizon * 0.88);
+    float3 sunTint = mix(float3(1.0, 0.94, 0.66), float3(1.0, 0.19, 0.035), saturate(red * warmControl));
+    color += sunTint * bloom * mix(0.55, 2.8, saturate(u.glow)) * sunVisibility;
+    color += float3(7.0, 5.0, 2.2) * disk * sunVisibility;
+
+    // Below the optical horizon, dense air removes blue light and then rolls into a
+    // dark foreground. It also cleanly occludes the lower part of the setting disk.
+    float below = smoothstep(horizon - 0.003, horizon + 0.055, uv.y);
+    float3 lower = mix(atHorizon * 0.62, float3(0.018, 0.012, 0.035), twilight);
+    color = mix(color, lower, below * mix(0.28, 0.76, twilight));
+
+    // Darkness controls when twilight deepens, but the terminal ramp always reaches
+    // true black so the nearly-closed overlay meets the system sleep transition.
+    float earlyDark = smoothstep(0.73, 0.98, t) * saturate(u.darkness);
+    color *= 1.0 - earlyDark * 0.93;
+    color *= 1.0 - smoothstep(0.965, 1.0, t);
+
+    // Exponential exposure is a smooth highlight rolloff: the sun can be many times
+    // brighter than the sky internally without clipping to a flat cartoon-white disk.
+    float exposure = mix(0.72, 1.75, saturate(u.exposure));
+    color = 1.0 - exp(-max(color, float3(0.0)) * exposure);
+    float dither = (interleavedGradientNoise(pixel) - 0.5) / 255.0
+        * (1.0 - smoothstep(0.94, 1.0, t));
+    return saturate(color + dither);
+}
+
 fragment float4 foldFragment(VertexOut in [[stage_in]],
                              constant Uniforms &u [[buffer(0)]],
                              texture2d<float> source [[texture(0)]],
                              sampler samp [[sampler(0)]]) {
+    if (u.effectKind == 1) {
+        float alpha = saturate(u.opacity);
+        float3 color = sunsetHDR(in.uv, in.position.xy, u);
+        return float4(color * alpha, alpha);
+    }
+
     // The panel turns about its bottom edge, so the top is what swings away from the
     // viewer. Grading the effects along that axis is what makes a completely flat,
     // undistorted image read as a display folding shut.

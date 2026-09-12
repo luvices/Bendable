@@ -35,5 +35,10 @@ xcrun notarytool submit "$DMG_PATH" \
     --wait
 
 xcrun stapler staple "$DMG_PATH"
+xcrun stapler validate "$DMG_PATH"
+codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+codesign --verify --strict --verbose=2 "$DMG_PATH"
+spctl --assess --type execute --verbose=2 "$APP_PATH"
+spctl --assess --type open --context context:primary-signature --verbose=2 "$DMG_PATH"
 shasum -a 256 "$DMG_PATH" > "$DMG_PATH.sha256"
 echo "Signed, notarized and stapled $DMG_PATH"

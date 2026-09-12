@@ -22,13 +22,14 @@ struct PresetPreview: NSViewRepresentable {
         container.metalView = view
         context.coordinator.view = view
         context.coordinator.renderer = renderer
-        context.coordinator.loadSampleImage(into: view)
+        context.coordinator.installPlaceholder(into: view)
         return container
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
         let engine = context.coordinator.engine(for: coordinator)
         engine.context.captureAvailable = true
+        context.coordinator.loadCapturedImageIfNeeded(for: engine.preset, into: context.coordinator.view)
         let direction: HingeDirection = progress < context.coordinator.lastProgress ? .closing : .opening
         context.coordinator.lastProgress = progress
         context.coordinator.view?.renderImmediately(
@@ -43,6 +44,7 @@ struct PresetPreview: NSViewRepresentable {
         var lastProgress: Double = 1
         private var cachedEngine: AnimationEngine?
         private var cachedPresetID: String?
+        private var attemptedCapture = false
 
         func engine(for appCoordinator: AppCoordinator) -> AnimationEngine {
             let preferences = appCoordinator.preferences
@@ -61,10 +63,19 @@ struct PresetPreview: NSViewRepresentable {
             return engine
         }
 
-        /// Uses the real desktop when permission already exists, and a locally drawn
-        /// stand-in otherwise, so opening Settings never triggers a permission prompt.
-        func loadSampleImage(into view: MetalPresetView) {
+        /// A local stand-in is always available, so opening Settings never triggers a
+        /// permission prompt and capture-free effects never touch ScreenCaptureKit.
+        func installPlaceholder(into view: MetalPresetView) {
             view.setCapturedImage(PreviewImage.placeholder())
+        }
+
+        /// Capture styles may use the real desktop when permission already exists.
+        /// Procedural and mask styles never enter this path.
+        func loadCapturedImageIfNeeded(
+            for preset: any AnimationPreset, into view: MetalPresetView?
+        ) {
+            guard preset.requiresScreenCapture, !attemptedCapture, let view else { return }
+            attemptedCapture = true
             guard ScreenCapture.permissionState == .granted else { return }
             let capture = ScreenCapture()
             Task { @MainActor in

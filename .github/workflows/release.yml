@@ -1,86 +1,71 @@
-name: Release
+name: Release macOS DMG
 
-# Releases follow the version in the Xcode project rather than a tag pushed by hand.
-# Bump MARKETING_VERSION, push, and this publishes. Every other push to main costs
-# one cheap Linux job that looks at the version and stops.
 on:
   push:
-    branches: [main]
-    tags: ['v*']
-  workflow_dispatch:
+    tags: ['v*.*.*']
 
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  decide:
-    name: Version
-    runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.check.outputs.version }}
-      publish: ${{ steps.check.outputs.publish }}
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          # Tags are how this knows what has already gone out.
-          fetch-depth: 0
-
-      - id: check
-        run: |
-          if [ "$GITHUB_REF_TYPE" = tag ]; then
-            VERSION="${GITHUB_REF_NAME#v}"
-          else
-            VERSION="$(scripts/version.sh)"
-          fi
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-
-          if [ "$GITHUB_REF_TYPE" != tag ] && git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
-            echo "v$VERSION is already released. Bump MARKETING_VERSION to publish again."
-            echo "publish=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "Publishing v$VERSION"
-            echo "publish=true" >> "$GITHUB_OUTPUT"
-          fi
-
   release:
-    name: Build, package and publish
-    needs: decide
-    if: needs.decide.outputs.publish == 'true'
+    name: Test, build, package and release
     runs-on: macos-15
     timeout-minutes: 45
 
-    # Lifted to the job so the steps below can ask whether signing is configured.
-    # `secrets` is not one of the contexts an `if` can read; `env` is.
-    env:
-      MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
-      VERSION: ${{ needs.decide.outputs.version }}
-
     steps:
       - uses: actions/checkout@v4
 
-      - name: Select Xcode
+      - name: Print macOS, Xcode and Swift info
         run: |
           if [ -d /Applications/Xcode_16.4.app ]; then
             sudo xcode-select -switch /Applications/Xcode_16.4.app
           fi
+          sw_vers
+          uname -m
           xcodebuild -version
+          swift --version
+
+      - name: Validate version tag
+        run: |
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::Tag must look like v1.0.0"; exit 1; }
 
       - name: Run tests
         run: scripts/test.sh
 
-      - name: Build Release
-        run: scripts/build.sh
+      - name: Build Apple Silicon Release
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          MARKETING_VERSION="$VERSION" scripts/build.sh
         env:
           CONFIGURATION: Release
+          ARCHS: arm64
 
-      # Signing and notarization are optional. Without the secrets the job still
-      # produces a working, ad-hoc signed DMG. It just shows Gatekeeper's
-      # unidentified-developer prompt on first launch.
-      - name: Import signing certificate
-        id: signing
-        if: env.MACOS_CERTIFICATE != ''
+      - name: Check signing configuration
+        id: signing-config
         env:
+          CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
+          NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+        run: |
+          if [[ -n "$CERTIFICATE" && -n "$CERTIFICATE_PASSWORD" && -n "$SIGNING_IDENTITY" && -n "$NOTARY_APPLE_ID" && -n "$NOTARY_PASSWORD" && -n "$NOTARY_TEAM_ID" ]]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Developer ID credentials are incomplete; using the project's ad-hoc signing."
+          fi
+
+      - name: Import Developer ID certificate
+        if: steps.signing-config.outputs.ready == 'true'
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
           MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
         run: |
           KEYCHAIN="$RUNNER_TEMP/build.keychain"
@@ -89,16 +74,13 @@ jobs:
           security set-keychain-settings -lut 3600 "$KEYCHAIN"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
           echo "$MACOS_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
-          security import "$RUNNER_TEMP/certificate.p12" -k "$KEYCHAIN" \
-            -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple:,codesign: \
-            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          security import "$RUNNER_TEMP/certificate.p12" -k "$KEYCHAIN" -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
           security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
           rm -f "$RUNNER_TEMP/certificate.p12"
-          echo "signed=true" >> "$GITHUB_OUTPUT"
 
       - name: Sign, notarize and package
-        if: ${{ steps.signing.outputs.signed == 'true' }}
+        if: steps.signing-config.outputs.ready == 'true'
         env:
           SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
           NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
@@ -106,19 +88,24 @@ jobs:
           NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
         run: scripts/notarize.sh
 
-      - name: Package DMG (unsigned)
-        if: ${{ steps.signing.outputs.signed != 'true' }}
+      - name: Package with ad-hoc signing
+        if: steps.signing-config.outputs.ready != 'true'
         run: scripts/package-dmg.sh
 
-      # The action creates the tag at this commit when it does not exist yet, which
-      # is what makes a version bump enough on its own.
-      - name: Publish release
+      - name: Name release assets and generate SHA-256
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          mv build/releases/Bendable.dmg "build/releases/Bendable-v${VERSION}.dmg"
+          shasum -a 256 "build/releases/Bendable-v${VERSION}.dmg" > "build/releases/Bendable-v${VERSION}.dmg.sha256"
+          test -n "$(find build/Bendable.app -name '*.metallib' -print -quit)" || { echo "::error::Compiled Metal library missing"; exit 1; }
+          hdiutil verify "build/releases/Bendable-v${VERSION}.dmg"
+
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ env.VERSION }}
-          name: Bendable ${{ env.VERSION }}
+          name: Bendable ${{ github.ref_name }}
           draft: false
           generate_release_notes: true
           files: |
-            build/releases/Bendable.dmg
-            build/releases/Bendable.dmg.sha256
+            build/releases/Bendable-${{ github.ref_name }}.dmg
+            build/releases/Bendable-${{ github.ref_name }}.dmg.sha256

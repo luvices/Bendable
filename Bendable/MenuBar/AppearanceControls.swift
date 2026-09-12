@@ -51,6 +51,13 @@ extension PresetControl {
         case .washout: "How much colour drains out of the screen as it turns away."
         case .corners: "How rounded the corners of the screen are."
         case .dimming: "How far the screen fades toward black."
+        case .strength: "Overall strength of the spatial anchoring and close effect."
+        case .sunSize: "Diameter of the sun at the horizon."
+        case .glow: "Reach and intensity of the sun bloom and atmospheric glow."
+        case .exposure: "Brightness and highlight rolloff of the procedural sky."
+        case .warmth: "How strongly the daylight moves through gold, orange and red."
+        case .horizon: "Vertical position of the horizon and the sun's crossing point."
+        case .darkness: "How early twilight falls toward near-black."
         default: ""
         }
     }

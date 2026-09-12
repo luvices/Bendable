@@ -1,8 +1,9 @@
-name: Build
+name: Build macOS DMG
 
 on:
   push:
     branches: ['**']
+    tags-ignore: ['v*.*.*']
   pull_request:
 
 concurrency:
@@ -26,6 +27,8 @@ jobs:
           fi
           xcodebuild -version
           swift --version
+          sw_vers
+          uname -m
 
       - name: Run tests
         run: scripts/test.sh
@@ -34,9 +37,60 @@ jobs:
         run: scripts/build.sh
         env:
           CONFIGURATION: Release
+          ARCHS: arm64
 
-      - name: Package DMG
+      - name: Check signing configuration
+        id: signing-config
+        env:
+          CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
+          NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+        run: |
+          if [[ -n "$CERTIFICATE" && -n "$CERTIFICATE_PASSWORD" && -n "$SIGNING_IDENTITY" && -n "$NOTARY_APPLE_ID" && -n "$NOTARY_PASSWORD" && -n "$NOTARY_TEAM_ID" ]]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Developer ID credentials are incomplete; using the project's ad-hoc signing."
+          fi
+
+      - name: Import Developer ID certificate
+        if: steps.signing-config.outputs.ready == 'true'
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/build.keychain"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 3600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          echo "$MACOS_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$KEYCHAIN" -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          rm -f "$RUNNER_TEMP/certificate.p12"
+
+      - name: Sign, notarize and package DMG
+        if: steps.signing-config.outputs.ready == 'true'
+        env:
+          SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
+          NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+        run: scripts/notarize.sh
+
+      - name: Package ad-hoc signed DMG
+        if: steps.signing-config.outputs.ready != 'true'
         run: scripts/package-dmg.sh
+
+      - name: Verify Metal shaders and DMG output
+        run: |
+          test -n "$(find build/Bendable.app -name '*.metallib' -print -quit)" || { echo "::error::Compiled Metal library missing"; exit 1; }
+          test -f build/releases/Bendable.dmg || { echo "::error::DMG missing"; exit 1; }
+          hdiutil verify build/releases/Bendable.dmg
 
       - name: Verify the app has no network entitlement
         run: |
@@ -51,9 +105,7 @@ jobs:
       - name: Upload DMG
         uses: actions/upload-artifact@v4
         with:
-          name: Bendable-${{ github.sha }}
-          path: |
-            build/releases/Bendable.dmg
-            build/releases/Bendable.dmg.sha256
+          name: Bendable-macOS-AppleSilicon
+          path: build/releases/Bendable.dmg
           if-no-files-found: error
           retention-days: 30

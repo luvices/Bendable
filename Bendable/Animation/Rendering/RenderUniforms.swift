@@ -24,6 +24,14 @@ struct RenderUniforms {
     var blades: UInt32 = 0
     var useTexture: UInt32 = 0
     var maxLOD: Float = 0
+    var effectKind: UInt32 = 0
+    var effectProgress: Float = 0
+    var sunSize: Float = 0.55
+    var glow: Float = 0.72
+    var exposure: Float = 0.65
+    var warmth: Float = 0.7
+    var horizon: Float = 0.56
+    var darkness: Float = 0.9
 
     init() {}
 
@@ -46,6 +54,14 @@ struct RenderUniforms {
         edgeOcclusion = Float(clamp(frame.edgeOcclusion, 0, 1))
         useTexture = (frame.usesCapturedImage && hasTexture) ? 1 : 0
         self.maxLOD = maxLOD
+        effectKind = frame.proceduralEffect.rawValue
+        effectProgress = Float(clamp(frame.effectProgress, 0, 1))
+        sunSize = Float(clamp(frame.sunSize, 0, 1))
+        glow = Float(clamp(frame.glow, 0, 1))
+        exposure = Float(clamp(frame.exposure, 0, 1))
+        warmth = Float(clamp(frame.warmth, 0, 1))
+        horizon = Float(clamp(frame.horizon, 0, 1))
+        darkness = Float(clamp(frame.darkness, 0, 1))
 
         switch frame.mask {
         case .none:
@@ -68,6 +84,9 @@ struct RenderUniforms {
 
     /// Background behind the folded panel. Premultiplied, so black at the frame's alpha.
     static func clearColor(for frame: FrameDescription, hasTexture: Bool) -> (Double, Double, Double, Double) {
+        if frame.proceduralEffect != .none {
+            return (0, 0, 0, 0)
+        }
         let opaqueBackdrop = frame.usesCapturedImage && hasTexture
         return (0, 0, 0, opaqueBackdrop ? clamp(frame.opacity, 0, 1) : 0)
     }

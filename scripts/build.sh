@@ -7,14 +7,19 @@ cd "$(dirname "$0")/.."
 CONFIGURATION="${CONFIGURATION:-Release}"
 DERIVED_DATA="${DERIVED_DATA:-build/DerivedData}"
 OUTPUT_DIR="${OUTPUT_DIR:-build}"
+ARCHS="${ARCHS:-arm64}"
+APP_VERSION="${MARKETING_VERSION:-$(scripts/version.sh)}"
 
-echo "Building Bendable ($CONFIGURATION)"
+echo "Building Bendable $APP_VERSION ($CONFIGURATION, $ARCHS)"
 xcodebuild \
     -project Bendable.xcodeproj \
     -scheme Bendable \
     -configuration "$CONFIGURATION" \
     -destination 'generic/platform=macOS' \
     -derivedDataPath "$DERIVED_DATA" \
+    ARCHS="$ARCHS" \
+    ONLY_ACTIVE_ARCH=NO \
+    MARKETING_VERSION="$APP_VERSION" \
     CODE_SIGN_IDENTITY="${CODE_SIGN_IDENTITY:--}" \
     CODE_SIGNING_REQUIRED=NO \
     CODE_SIGNING_ALLOWED="${CODE_SIGNING_ALLOWED:-YES}" \
